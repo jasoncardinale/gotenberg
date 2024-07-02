@@ -36,7 +36,6 @@ ARG GOTENBERG_USER_GID
 ARG GOTENBERG_USER_UID
 ARG NOTO_COLOR_EMOJI_VERSION
 ARG PDFTK_VERSION
-ARG TMP_CHOMIUM_VERSION_ARMHF="116.0.5845.180-1~deb12u1"
 
 LABEL org.opencontainers.image.title="Gotenberg" \
       org.opencontainers.image.description="A Docker-powered stateless API for PDF files." \
@@ -117,38 +116,6 @@ RUN \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 RUN \
-    # Install either Google Chrome stable on amd64 architecture or
-    # Chromium on other architectures.
-    # See https://github.com/gotenberg/gotenberg/issues/328.
-    # FIXME:
-    # armhf is currently not working with the latest version of Chromium.
-    # See: https://github.com/gotenberg/gotenberg/issues/709.
-    /bin/bash -c \
-    'set -e &&\
-    if [[ "$(dpkg --print-architecture)" == "amd64" ]]; then \
-      curl https://dl.google.com/linux/linux_signing_key.pub | apt-key add - &&\
-      echo "deb http://dl.google.com/linux/chrome/deb/ stable main" | tee /etc/apt/sources.list.d/google-chrome.list &&\
-      apt-get update -qq &&\
-      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends --allow-unauthenticated google-chrome-stable &&\
-      mv /usr/bin/google-chrome-stable /usr/bin/chromium; \
-    elif [[ "$(dpkg --print-architecture)" == "armhf" ]]; then \
-      apt-get update -qq &&\
-      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends devscripts &&\
-      debsnap chromium-common "$TMP_CHOMIUM_VERSION_ARMHF" -v --force --binary --architecture armhf &&\
-      debsnap chromium "$TMP_CHOMIUM_VERSION_ARMHF" -v --force --binary --architecture armhf &&\
-      DEBIAN_FRONTEND=noninteractive apt-get install --fix-broken -y -qq --no-install-recommends "./binary-chromium-common/chromium-common_${TMP_CHOMIUM_VERSION_ARMHF}_armhf.deb" "./binary-chromium/chromium_${TMP_CHOMIUM_VERSION_ARMHF}_armhf.deb" &&\
-      DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq devscripts &&\
-      rm -rf ./binary-chromium-common/* ./binary-chromium/*; \
-    else \
-      apt-get update -qq &&\
-      DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends chromium; \
-    fi' &&\
-    # Verify installation.
-    chromium --version &&\
-    # Cleanup.
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-
-RUN \
     # Install LibreOffice & unoconverter.
     echo "deb http://deb.debian.org/debian bookworm-backports main" >> /etc/apt/sources.list &&\
     apt-get update -qq &&\
@@ -191,7 +158,6 @@ COPY build/fonts.conf /etc/fonts/conf.d/100-gotenberg.conf
 COPY --from=binary-stage /home/gotenberg /usr/bin/
 
 # Environment variables required by modules or else.
-ENV CHROMIUM_BIN_PATH /usr/bin/chromium
 ENV LIBREOFFICE_BIN_PATH /usr/lib/libreoffice/program/soffice.bin
 ENV UNOCONVERTER_BIN_PATH /usr/bin/unoconverter
 ENV PDFTK_BIN_PATH /usr/bin/pdftk
