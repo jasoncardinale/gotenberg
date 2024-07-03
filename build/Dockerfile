@@ -29,7 +29,7 @@ RUN go build -o gotenberg -ldflags "-X 'github.com/gotenberg/gotenberg/v8/cmd.Ve
 # ----------------------------------------------
 # Final stage
 # ----------------------------------------------
-FROM debian:12-slim
+FROM debian:12.6-slim
 
 ARG GOTENBERG_VERSION
 ARG GOTENBERG_USER_GID
@@ -56,7 +56,7 @@ RUN \
     # Install system dependencies required for the next instructions or debugging.
     # Note: tini is a helper for reaping zombie processes.
     apt-get update -qq &&\
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl gnupg tini python3 default-jre-headless &&\
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends curl tini python3 default-jre-headless &&\
     # Cleanup.
     # Note: the Debian image does automatically a clean after each install thanks to a hook.
     # Therefore, there is no need for apt-get clean.
