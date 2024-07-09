@@ -10,6 +10,21 @@
 Gotenberg provides a developer-friendly API to interact with powerful tools like Chromium and LibreOffice for converting 
 numerous document formats (HTML, Markdown, Word, Excel, etc.) into PDF files, and more!
 
+## ConductorAI
+
+This is a fork of the Gotenberg [repo](https://github.com/gotenberg/gotenberg) designed the minimize the number of vulnerabilities. We do this by removing the Chromium module (which was not needed for our particular use-case) and by building a distroless image.
+
+In order to build and push an updated image, follow these steps
+
+1. Check https://go.dev/dl/ for the latest `GOLANG_VERSION`
+2. Check https://fonts.google.com/noto/specimen/Noto+Color+Emoji for the latest `NOTO_COLOR_EMOJI_VERSION`
+3. Check https://gitlab.com/pdftk-java/pdftk/-/releases for the latest `PDFTK_VERSION`
+4. Update those respective build arguments in `scripts/release.sh`
+5. Then run
+    ```
+    bash script/release.sh <URL> <tag>
+    ```
+
 ## Quick Start
 
 Open a terminal and run the following command:
