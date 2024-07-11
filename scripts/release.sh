@@ -20,6 +20,6 @@ docker buildx build \
   --build-arg PDFTK_VERSION="$PDFTK_VERSION" \
   --platform linux/arm64 \
   --platform linux/amd64 \
-  -t "$DOCKER_REPOSITORY/gotenberg:$TAG" \
+  -t "$DOCKER_REPOSITORY:$TAG" \
   --push \
   -f build/Dockerfile.distroless .
