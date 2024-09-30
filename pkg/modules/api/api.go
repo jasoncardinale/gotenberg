@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/alexliesenfeld/health"
+	"github.com/dlclark/regexp2"
 	"github.com/labstack/echo/v4"
 	flag "github.com/spf13/pflag"
 	"go.uber.org/multierr"
@@ -31,11 +32,13 @@ type Api struct {
 	tlsCertFile               string
 	tlsKeyFile                string
 	startTimeout              time.Duration
+	bodyLimit                 int64
 	timeout                   time.Duration
 	rootPath                  string
 	traceHeader               string
 	basicAuthUsername         string
 	basicAuthPassword         string
+	downloadFromCfg           downloadFromConfig
 	disableHealthCheckLogging bool
 
 	routes              []Route
@@ -45,6 +48,13 @@ type Api struct {
 	fs                  *gotenberg.FileSystem
 	logger              *zap.Logger
 	srv                 *echo.Echo
+}
+
+type downloadFromConfig struct {
+	allowList *regexp2.Regexp
+	denyList  *regexp2.Regexp
+	maxRetry  int
+	disable   bool
 }
 
 // Router is a module interface which adds routes to the [Api].
@@ -165,9 +175,14 @@ func (a *Api) Descriptor() gotenberg.ModuleDescriptor {
 			fs.String("api-tls-key-file", "", "Path to the TLS/SSL key file - for HTTPS support")
 			fs.Duration("api-start-timeout", time.Duration(30)*time.Second, "Set the time limit for the API to start")
 			fs.Duration("api-timeout", time.Duration(30)*time.Second, "Set the time limit for requests")
+			fs.String("api-body-limit", "", "Set the body limit for multipart/form-data requests")
 			fs.String("api-root-path", "/", "Set the root path of the API - for service discovery via URL paths")
 			fs.String("api-trace-header", "Gotenberg-Trace", "Set the header name to use for identifying requests")
 			fs.Bool("api-enable-basic-auth", false, "Enable basic authentication - will look for the GOTENBERG_API_BASIC_AUTH_USERNAME and GOTENBERG_API_BASIC_AUTH_PASSWORD environment variables")
+			fs.String("api-download-from-allow-list", "", "Set the allowed URLs for the download from feature using a regular expression")
+			fs.String("api-download-from-deny-list", "", "Set the denied URLs for the download from feature using a regular expression")
+			fs.Int("api-download-from-max-retry", 4, "Set the maximum number of retries for the download from feature")
+			fs.Bool("api-disable-download-from", false, "Disable the download from feature")
 			fs.Bool("api-disable-health-check-logging", false, "Disable health check logging")
 			return fs
 		}(),
@@ -183,8 +198,15 @@ func (a *Api) Provision(ctx *gotenberg.Context) error {
 	a.tlsKeyFile = flags.MustString("api-tls-key-file")
 	a.startTimeout = flags.MustDuration("api-start-timeout")
 	a.timeout = flags.MustDuration("api-timeout")
+	a.bodyLimit = flags.MustHumanReadableBytes("api-body-limit")
 	a.rootPath = flags.MustString("api-root-path")
 	a.traceHeader = flags.MustString("api-trace-header")
+	a.downloadFromCfg = downloadFromConfig{
+		allowList: flags.MustRegexp("api-download-from-allow-list"),
+		denyList:  flags.MustRegexp("api-download-from-deny-list"),
+		maxRetry:  flags.MustInt("api-download-from-max-retry"),
+		disable:   flags.MustBool("api-disable-download-from"),
+	}
 	a.disableHealthCheckLogging = flags.MustBool("api-disable-health-check-logging")
 
 	// Port from env?
@@ -436,7 +458,7 @@ func (a *Api) Start() error {
 		}
 
 		if route.IsMultipart {
-			middlewares = append(middlewares, contextMiddleware(a.fs, a.timeout))
+			middlewares = append(middlewares, contextMiddleware(a.fs, a.timeout, a.bodyLimit, a.downloadFromCfg))
 
 			for _, externalMultipartMiddleware := range externalMultipartMiddlewares {
 				middlewares = append(middlewares, externalMultipartMiddleware.Handler)
@@ -453,13 +475,22 @@ func (a *Api) Start() error {
 		)
 	}
 
-	// Let's not forget the health check route...
+	// Let's not forget the health check routes...
+	checks := append(a.healthChecks, health.WithTimeout(a.timeout))
+	checker := health.NewChecker(checks...)
+	healthCheckHandler := health.NewHandler(checker)
+
 	a.srv.GET(
 		fmt.Sprintf("%s%s", a.rootPath, "health"),
 		func() echo.HandlerFunc {
-			checks := append(a.healthChecks, health.WithTimeout(a.timeout))
-			checker := health.NewChecker(checks...)
-			return echo.WrapHandler(health.NewHandler(checker))
+			return echo.WrapHandler(healthCheckHandler)
+		}(),
+		hardTimeoutMiddleware(hardTimeout),
+	)
+	a.srv.HEAD(
+		fmt.Sprintf("%s%s", a.rootPath, "health"),
+		func() echo.HandlerFunc {
+			return echo.WrapHandler(healthCheckHandler)
 		}(),
 		hardTimeoutMiddleware(hardTimeout),
 	)
