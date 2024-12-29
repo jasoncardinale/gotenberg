@@ -11,9 +11,10 @@ DOCKER_REPOSITORY=gotenberg
 GOTENBERG_VERSION=snapshot
 GOTENBERG_USER_GID=1001
 GOTENBERG_USER_UID=1001
-NOTO_COLOR_EMOJI_VERSION=v2.042 # See https://github.com/googlefonts/noto-emoji/releases.
+NOTO_COLOR_EMOJI_VERSION=v2.047 # See https://github.com/googlefonts/noto-emoji/releases.
 PDFTK_VERSION=v3.3.3 # See https://gitlab.com/pdftk-java/pdftk/-/releases - Binary package.
-GOLANGCI_LINT_VERSION=v1.60.3 # See https://github.com/golangci/golangci-lint/releases.
+PDFCPU_VERSION=v0.8.1 # See https://github.com/pdfcpu/pdfcpu/releases.
+GOLANGCI_LINT_VERSION=v1.61.0 # See https://github.com/golangci/golangci-lint/releases.
 
 .PHONY: build
 build: ## Build the Gotenberg's Docker image
@@ -24,12 +25,14 @@ build: ## Build the Gotenberg's Docker image
 	--build-arg GOTENBERG_USER_UID=$(GOTENBERG_USER_UID) \
 	--build-arg NOTO_COLOR_EMOJI_VERSION=$(NOTO_COLOR_EMOJI_VERSION) \
 	--build-arg PDFTK_VERSION=$(PDFTK_VERSION) \
+	--build-arg PDFCPU_VERSION=$(PDFCPU_VERSION) \
 	-t $(DOCKER_REGISTRY)/$(DOCKER_REPOSITORY):$(GOTENBERG_VERSION) \
 	-f build/Dockerfile .
 
 GOTENBERG_GRACEFUL_SHUTDOWN_DURATION=30s
 API_PORT=3000
 API_PORT_FROM_ENV=
+API_BIND_IP=
 API_START_TIMEOUT=30s
 API_TIMEOUT=30s
 API_BODY_LIMIT=
@@ -69,6 +72,11 @@ LOG_LEVEL=info
 LOG_FORMAT=auto
 LOG_FIELDS_PREFIX=
 PDFENGINES_ENGINES=
+PDFENGINES_MERGE_ENGINES=qpdf,pdfcpu,pdftk
+PDFENGINES_SPLIT_ENGINES=pdfcpu,qpdf,pdftk
+PDFENGINES_CONVERT_ENGINES=libreoffice-pdfengine
+PDFENGINES_READ_METADATA_ENGINES=exiftool
+PDFENGINES_WRITE_METADATA_ENGINES=exiftool
 PDFENGINES_DISABLE_ROUTES=false
 PROMETHEUS_NAMESPACE=gotenberg
 PROMETHEUS_COLLECT_INTERVAL=1s
@@ -95,6 +103,7 @@ run: ## Start a Gotenberg container
 	--gotenberg-graceful-shutdown-duration=$(GOTENBERG_GRACEFUL_SHUTDOWN_DURATION) \
 	--api-port=$(API_PORT) \
 	--api-port-from-env=$(API_PORT_FROM_ENV) \
+	--api-bind-ip=$(API_BIND_IP) \
 	--api-start-timeout=$(API_START_TIMEOUT) \
 	--api-timeout=$(API_TIMEOUT) \
 	--api-body-limit="$(API_BODY_LIMIT)" \
@@ -102,9 +111,9 @@ run: ## Start a Gotenberg container
 	--api-trace-header=$(API_TRACE_HEADER) \
 	--api-enable-basic-auth=$(API_ENABLE_BASIC_AUTH) \
 	--api-download-from-allow-list=$(API-DOWNLOAD-FROM-ALLOW-LIST) \
-    --api-download-from-deny-list=$(API-DOWNLOAD-FROM-DENY-LIST) \
-    --api-download-from-max-retry=$(API-DOWNLOAD-FROM-FROM-MAX-RETRY) \
-    --api-disable-download-from=$(API-DISABLE-DOWNLOAD-FROM) \
+	--api-download-from-deny-list=$(API-DOWNLOAD-FROM-DENY-LIST) \
+	--api-download-from-max-retry=$(API-DOWNLOAD-FROM-FROM-MAX-RETRY) \
+	--api-disable-download-from=$(API-DISABLE-DOWNLOAD-FROM) \
 	--api-disable-health-check-logging=$(API_DISABLE_HEALTH_CHECK_LOGGING) \
 	--chromium-restart-after=$(CHROMIUM_RESTART_AFTER) \
 	--chromium-auto-start=$(CHROMIUM_AUTO_START) \
@@ -132,6 +141,11 @@ run: ## Start a Gotenberg container
 	--log-format=$(LOG_FORMAT) \
 	--log-fields-prefix=$(LOG_FIELDS_PREFIX) \
 	--pdfengines-engines=$(PDFENGINES_ENGINES) \
+	--pdfengines-merge-engines=$(PDFENGINES_MERGE_ENGINES) \
+	--pdfengines-split-engines=$(PDFENGINES_SPLIT_ENGINES) \
+	--pdfengines-convert-engines=$(PDFENGINES_CONVERT_ENGINES) \
+	--pdfengines-read-metadata-engines=$(PDFENGINES_READ_METADATA_ENGINES) \
+	--pdfengines-write-metadata-engines=$(PDFENGINES_WRITE_METADATA_ENGINES) \
 	--pdfengines-disable-routes=$(PDFENGINES_DISABLE_ROUTES) \
 	--prometheus-namespace=$(PROMETHEUS_NAMESPACE) \
 	--prometheus-collect-interval=$(PROMETHEUS_COLLECT_INTERVAL) \
@@ -197,6 +211,7 @@ release: ## Build the Gotenberg's Docker image and push it to a Docker repositor
 	$(GOTENBERG_USER_UID) \
 	$(NOTO_COLOR_EMOJI_VERSION) \
 	$(PDFTK_VERSION) \
+	$(PDFCPU_VERSION) \
 	$(DOCKER_REGISTRY) \
 	$(DOCKER_REPOSITORY) \
 	$(LINUX_AMD64_RELEASE)

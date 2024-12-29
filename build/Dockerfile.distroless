@@ -12,9 +12,34 @@ ARG GOOGLE_DISTROLESS_BASE_IMAGE=gcr.io/distroless/cc-debian12:latest
 ARG GOLANG_VERSION
 
 # ----------------------------------------------
+# pdfcpu binary build stage
+# ----------------------------------------------
+# Note: this stage is required as pdfcpu does not release an armhf variant by
+# default.
+
+FROM golang:$GOLANG_VERSION AS pdfcpu-binary-stage
+
+ARG PDFCPU_VERSION
+ENV CGO_ENABLED=0
+
+# Define the working directory outside of $GOPATH (we're using go modules).
+WORKDIR /home
+
+RUN curl -Ls "https://github.com/pdfcpu/pdfcpu/archive/refs/tags/$PDFCPU_VERSION.tar.gz" -o pdfcpu.tar.gz &&\
+    tar --strip-components=1 -xvzf pdfcpu.tar.gz
+
+# Install module dependencies.
+RUN go mod download &&\
+    go mod verify
+
+RUN go build -o pdfcpu -ldflags "-s -w -X 'main.version=$PDFCPU_VERSION' -X 'github.com/pdfcpu/pdfcpu/pkg/pdfcpu.VersionStr=$PDFCPU_VERSION' -X main.builtBy=gotenberg" ./cmd/pdfcpu &&\
+    # Verify installation.
+    ./pdfcpu version
+
+# ----------------------------------------------
 # Gotenberg binary build stage
 # ----------------------------------------------
-FROM golang:$GOLANG_VERSION AS binary-stage
+FROM golang:$GOLANG_VERSION AS gotenberg-binary-stage
 
 ARG GOTENBERG_VERSION
 ENV CGO_ENABLED=0
@@ -174,38 +199,41 @@ ARG TARGETARCH
 FROM base-${TARGETARCH}
 
 # Required for unoconverter
-COPY --from=binary-stage /usr/bin/python /usr/bin/python
-COPY --from=binary-stage /usr/lib/python3 /usr/lib/python3
-COPY --from=binary-stage /usr/lib/python3.11 /usr/lib/python3.11
+COPY --from=gotenberg-binary-stage /usr/bin/python /usr/bin/python
+COPY --from=gotenberg-binary-stage /usr/lib/python3 /usr/lib/python3
+COPY --from=gotenberg-binary-stage /usr/lib/python3.11 /usr/lib/python3.11
 
 ENV PYTHONPATH="/usr/local/lib/python3.11/dist-packages:"
 
 # LibreOffice dependencies
 # Just copied the entire directory as there were too many dependencies to justify finding/listing them individually
-COPY --from=binary-stage /lib/${CHIPSET_ARCH} /lib/${CHIPSET_ARCH}
+COPY --from=gotenberg-binary-stage /lib/${CHIPSET_ARCH} /lib/${CHIPSET_ARCH}
+
+# Copy the pdfcpu binary from the pdfcpu-binary-stage.
+COPY --from=pdfcpu-binary-stage /home/pdfcpu /usr/bin/
 
 # Copy the Gotenberg binary from the binary stage
-COPY --from=binary-stage /home/gotenberg /usr/bin/gotenberg
+COPY --from=gotenberg-binary-stage /home/gotenberg /usr/bin/gotenberg
 
 # Copy other neccessary binaries/libraries
-COPY --from=binary-stage /usr/lib/libreoffice /usr/lib/libreoffice
-COPY --from=binary-stage /etc/libreoffice /etc/libreoffice
-COPY --from=binary-stage /etc/apparmor.d /etc/apparmor.d
-COPY --from=binary-stage /usr/bin/libreoffice /usr/bin/unoconverter /usr/bin/pdftk /usr/bin/qpdf /usr/bin/exiftool /usr/bin/tini /usr/bin/
+COPY --from=gotenberg-binary-stage /usr/lib/libreoffice /usr/lib/libreoffice
+COPY --from=gotenberg-binary-stage /etc/libreoffice /etc/libreoffice
+COPY --from=gotenberg-binary-stage /etc/apparmor.d /etc/apparmor.d
+COPY --from=gotenberg-binary-stage /usr/bin/libreoffice /usr/bin/unoconverter /usr/bin/pdftk /usr/bin/qpdf /usr/bin/exiftool /usr/bin/tini /usr/bin/
 
 # Fonts
-COPY --from=binary-stage /usr/share/doc /usr/share/doc
-COPY --from=binary-stage /usr/share/bug /usr/share/bug
-COPY --from=binary-stage /usr/share/fonts /usr/share/fonts
-COPY --from=binary-stage /usr/share/fontconfig /usr/share/fontconfig
-COPY --from=binary-stage /usr/local/share/fonts /usr/local/share/fonts
-COPY --from=binary-stage /etc/fonts /etc/fonts
+COPY --from=gotenberg-binary-stage /usr/share/doc /usr/share/doc
+COPY --from=gotenberg-binary-stage /usr/share/bug /usr/share/bug
+COPY --from=gotenberg-binary-stage /usr/share/fonts /usr/share/fonts
+COPY --from=gotenberg-binary-stage /usr/share/fontconfig /usr/share/fontconfig
+COPY --from=gotenberg-binary-stage /usr/local/share/fonts /usr/local/share/fonts
+COPY --from=gotenberg-binary-stage /etc/fonts /etc/fonts
 
 # Other binaries (used in /usr/bin/libreoffice script)
-COPY --from=binary-stage /usr/bin/dirname /usr/bin/uname /usr/bin/basename /usr/bin/grep /usr/bin/sed /usr/bin/
+COPY --from=gotenberg-binary-stage /usr/bin/dirname /usr/bin/uname /usr/bin/basename /usr/bin/grep /usr/bin/sed /usr/bin/
 
 # Required to allow unoconverter to be called without 'python' prefix
-COPY --from=binary-stage /usr/bin/env /usr/bin/
+COPY --from=gotenberg-binary-stage /usr/bin/env /usr/bin/
 
 # Environment variables required by modules or else.
 ENV LIBREOFFICE_BIN_PATH=/usr/lib/libreoffice/program/soffice.bin
@@ -213,6 +241,7 @@ ENV UNOCONVERTER_BIN_PATH=/usr/bin/unoconverter
 ENV PDFTK_BIN_PATH=/usr/bin/pdftk
 ENV QPDF_BIN_PATH=/usr/bin/qpdf
 ENV EXIFTOOL_BIN_PATH=/usr/bin/exiftool
+ENV PDFCPU_BIN_PATH=/usr/bin/pdfcpu
 
 ARG GOTENBERG_USER_UID
 
